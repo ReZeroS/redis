@@ -2340,8 +2340,9 @@ extern int ProcessingEventsWhileBlocked;
  * for ready file descriptors.
  *
  * Note: This function is (currently) called from two functions:
- * 1. aeMain - The main server loop
- * 2. processEventsWhileBlocked - Process clients during RDB/AOF load
+ * 两个调用方
+ * 1. aeMain - The main server loop // 主事件循环
+ * 2. processEventsWhileBlocked - Process clients during RDB/AOF load // 在 RDB AOF 加载的同时 处理客户端的时候
  *
  * If it was called from processEventsWhileBlocked we don't want
  * to perform all actions (For example, we don't want to expire
@@ -3156,6 +3157,7 @@ void initServer(void) {
     server.current_client = NULL;
     server.errors = raxNew();
     server.fixed_time_expire = 0;
+    // 创建链表客户端
     server.clients = listCreate();
     server.clients_index = raxNew();
     server.clients_to_close = listCreate();
@@ -3194,6 +3196,7 @@ void initServer(void) {
             strerror(errno));
         exit(1);
     }
+    // 按 dbnum初始化服务端db的数组
     server.db = zmalloc(sizeof(redisDb)*server.dbnum);
 
     /* Open the TCP listening socket for the user commands. */
@@ -3227,9 +3230,12 @@ void initServer(void) {
         exit(1);
     }
 
+    // 初始化每个db的一些基本状态
     /* Create the Redis databases, and initialize other internal state. */
     for (j = 0; j < server.dbnum; j++) {
+        // dict 比较重要，因为key val 的数据结构主要就是存在这里
         server.db[j].dict = dictCreate(&dbDictType,NULL);
+        // 保存过期键用的一些数据
         server.db[j].expires = dictCreate(&dbExpiresDictType,NULL);
         server.db[j].expires_cursor = 0;
         server.db[j].blocking_keys = dictCreate(&keylistDictType,NULL);
@@ -3291,6 +3297,7 @@ void initServer(void) {
     server.aof_last_write_errno = 0;
     server.repl_good_slaves_count = 0;
 
+    // 定时的一些任务handler， 目前主要就 ServerCron
     /* Create the timer callback, this is our way to process many background
      * operations incrementally, like clients timeout, eviction of unaccessed
      * expired keys and so forth. */
@@ -3299,6 +3306,7 @@ void initServer(void) {
         exit(1);
     }
 
+    // 网络相关处理的handler
     /* Create an event handler for accepting new connections in TCP and Unix
      * domain sockets. */
     if (createSocketAcceptHandler(&server.ipfd, acceptTcpHandler) != C_OK) {
@@ -3322,6 +3330,7 @@ void initServer(void) {
 
     /* Register before and after sleep handlers (note this needs to be done
      * before loading persistence since it is used by processEventsWhileBlocked. */
+    // 存在于 beforeSleep 中的命令处理相关的handler在这步进行了注册
     aeSetBeforeSleepProc(server.el,beforeSleep);
     aeSetAfterSleepProc(server.el,afterSleep);
 
@@ -3710,6 +3719,7 @@ void call(client *c, int flags) {
     prev_err_count = server.stat_total_error_replies;
     updateCachedTime(0);
     elapsedStart(&call_timer);
+    // 真正执行命令的时候
     c->cmd->proc(c);
     const long duration = elapsedUs(call_timer);
     c->duration = duration;
@@ -6212,6 +6222,7 @@ int main(int argc, char **argv) {
     getRandomBytes(hashseed,sizeof(hashseed));
     dictSetHashFunctionSeed(hashseed);
     server.sentinel_mode = checkForSentinelMode(argc,argv);
+    // 初始化服务端配置
     initServerConfig();
     ACLInit(); /* The ACL subsystem must be initialized ASAP because the
                   basic networking code and client creation depends on it. */
@@ -6318,6 +6329,7 @@ int main(int argc, char **argv) {
     }
 
     readOOMScoreAdj();
+    // 初始化server
     initServer();
     if (background || server.pidfile) createPidFile();
     if (server.set_proc_title) redisSetProcTitle(NULL);
@@ -6350,6 +6362,7 @@ int main(int argc, char **argv) {
         moduleLoadFromQueue();
         ACLLoadUsersAtStartup();
         InitServerLast();
+        // server 启动时读一下 rdb 或者 aof
         loadDataFromDisk();
         if (server.cluster_enabled) {
             if (verifyClusterConfigWithData() == C_ERR) {
@@ -6389,6 +6402,7 @@ int main(int argc, char **argv) {
     redisSetCpuAffinity(server.server_cpulist);
     setOOMScoreAdj(-1);
 
+    // 主事件循环
     aeMain(server.el);
     aeDeleteEventLoop(server.el);
     return 0;
