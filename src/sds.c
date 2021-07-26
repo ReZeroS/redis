@@ -99,32 +99,42 @@ static inline size_t sdsTypeMaxSize(char type) {
  *
  * You can print the string with printf() as there is an implicit \0 at the
  * end of the string. However the string is binary safe and can contain
- * \0 characters in the middle, as the length is stored in the sds header. */
+ * \0 characters in the middle, as the length is stored in the sds header.
+ * // 包的格式大致如下，packed 的原因，按 1 字节对齐
+ * len[4] alloc[4] flags[1] buf[...]
+ * */
 sds _sdsnewlen(const void *init, size_t initlen, int trymalloc) {
     void *sh;
     sds s;
+    // 推断 sds 属于哪种类型
     char type = sdsReqType(initlen);
     /* Empty strings are usually created in order to append. Use type 8
      * since type 5 is not good at this. */
+    // 强转 5 -> 8
     if (type == SDS_TYPE_5 && initlen == 0) type = SDS_TYPE_8;
+    // 根据 type 算结构体长，这样可以根据 sh + hdrlen 得到buf的地址
     int hdrlen = sdsHdrSize(type);
     unsigned char *fp; /* flags pointer. */
     size_t usable;
 
     assert(initlen + hdrlen + 1 > initlen); /* Catch size_t overflow */
+    // +1 是为了 \0, 这样 buf 也兼容一个c的字符串定义，保证了二进制安全
     sh = trymalloc?
         s_trymalloc_usable(hdrlen+initlen+1, &usable) :
         s_malloc_usable(hdrlen+initlen+1, &usable);
     if (sh == NULL) return NULL;
+    // 这里判断的是地址不是值
     if (init==SDS_NOINIT)
         init = NULL;
     else if (!init)
         memset(sh, 0, hdrlen+initlen+1);
-    s = (char*)sh+hdrlen;
-    fp = ((unsigned char*)s)-1;
+    s = (char*)sh+hdrlen; // buf base address
+    fp = ((unsigned char*)s)-1; // flags
     usable = usable-hdrlen-1;
     if (usable > sdsTypeMaxSize(type))
         usable = sdsTypeMaxSize(type);
+
+    // 算结构体的基本属性
     switch(type) {
         case SDS_TYPE_5: {
             *fp = type | (initlen << SDS_TYPE_BITS);
@@ -161,6 +171,7 @@ sds _sdsnewlen(const void *init, size_t initlen, int trymalloc) {
     }
     if (initlen && init)
         memcpy(s, init, initlen);
+    //末尾结束符
     s[initlen] = '\0';
     return s;
 }
@@ -193,6 +204,7 @@ sds sdsdup(const sds s) {
 /* Free an sds string. No operation is performed if 's' is NULL. */
 void sdsfree(sds s) {
     if (s == NULL) return;
+    // 直接释放内存的版本，还有复写重用的版本 sdsclear
     s_free((char*)s-sdsHdrSize(s[-1]));
 }
 
@@ -219,6 +231,7 @@ void sdsupdatelen(sds s) {
  * However all the existing buffer is not discarded but set as free space
  * so that next append operations will not require allocations up to the
  * number of bytes previously available. */
+// 反正要重写了，那就覆盖掉即可，\0 会标记结束
 void sdsclear(sds s) {
     sdssetlen(s, 0);
     s[0] = '\0';
