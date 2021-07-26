@@ -84,6 +84,7 @@ zskiplist *zslCreate(void) {
     zsl = zmalloc(sizeof(*zsl));
     zsl->level = 1;
     zsl->length = 0;
+    // 创建zsl头节点，头节点基本是个标记节点，可以看到它的level，score等等基本都是空
     zsl->header = zslCreateNode(ZSKIPLIST_MAXLEVEL,0,NULL);
     for (j = 0; j < ZSKIPLIST_MAXLEVEL; j++) {
         zsl->header->level[j].forward = NULL;
@@ -117,10 +118,16 @@ void zslFree(zskiplist *zsl) {
 
 /* Returns a random level for the new skiplist node we are going to create.
  * The return value of this function is between 1 and ZSKIPLIST_MAXLEVEL
- * (both inclusive), with a powerlaw-alike distribution where higher
- * levels are less likely to be returned. */
+ * (both inclusive), with a powerlaw-alike distribution
+ * **【where higher levels are less likely to be returned】**. */
+// 随机生成节点高度 1~64, 节点层确定高之后不会再修改，且值越高几率越小
+// 因为 level 初始化为 1，所以最终层数为 1 的概率为 1-ZSKIPLIST_P，即 0.75。
+// 当最终层数大于 1 时，每次层数增加的概率都是 ZSKIPLIST_P，那么 n 层的概率是 (1-ZSKIPLIST_P ) * ZSKIPLIST_P ^ (n - 1)
+// 这样期望的话就是 E = 1*(1-p) + 2*p*(1-p) + 3*p^2(1-p) + 节点高 *p^(节点高 - 1)*（1-p） 约等于 1.33
+// 因为层数增加的概率是 ZSKIPLIST_P，可以看成是第 k 层的节点数是第 k+1 层节点数的 1/ZSKIPLIST_P 倍，所以 Redis 的跳跃表类似不稳定的四叉树
 int zslRandomLevel(void) {
     int level = 1;
+    // 随机生成值 取 低16 即 0~65535, 若小于
     while ((random()&0xFFFF) < (ZSKIPLIST_P * 0xFFFF))
         level += 1;
     return (level<ZSKIPLIST_MAXLEVEL) ? level : ZSKIPLIST_MAXLEVEL;
@@ -130,15 +137,23 @@ int zslRandomLevel(void) {
  * exist (up to the caller to enforce that). The skiplist takes ownership
  * of the passed SDS string 'ele'. */
 zskiplistNode *zslInsert(zskiplist *zsl, double score, sds ele) {
+    // 插入节点时，需要更新被插入节点每层的前一个节点。由于每层更新的节点不一样，所以将每层需要更新的节点记录在update[i]中
+    // rank 记录当前层从header节点到update[i]节点所经历的步长，在更新update[i]的span和设置新插入节点的span时用到
     zskiplistNode *update[ZSKIPLIST_MAXLEVEL], *x;
     unsigned int rank[ZSKIPLIST_MAXLEVEL];
     int i, level;
 
     serverAssert(!isnan(score));
     x = zsl->header;
+    // 找到要更新节点的逻辑
+    // 外层循环控制高度，由高到低
     for (i = zsl->level-1; i >= 0; i--) {
         /* store rank that is crossed to reach the insert position */
         rank[i] = i == (zsl->level-1) ? 0 : rank[i+1];
+        // 头节点forward为null，自然会停止
+        // 若该层的后节点x->level[i].forward有值，且该节点
+        // score小于当前score 或 score 相等但是ele小于当前ele
+        // 这也就说明在找到位置e之前，我们尽可能的已经遍历并记录了比当前score小的元素
         while (x->level[i].forward &&
                 (x->level[i].forward->score < score ||
                     (x->level[i].forward->score == score &&
@@ -162,7 +177,9 @@ zskiplistNode *zslInsert(zskiplist *zsl, double score, sds ele) {
         }
         zsl->level = level;
     }
+    // 创建节点
     x = zslCreateNode(level,score,ele);
+    // 从低到高，从前往后的遍历并更新需要更新的节点
     for (i = 0; i < level; i++) {
         x->level[i].forward = update[i]->level[i].forward;
         update[i]->level[i].forward = x;
@@ -177,6 +194,7 @@ zskiplistNode *zslInsert(zskiplist *zsl, double score, sds ele) {
         update[i]->level[i].span++;
     }
 
+    // 调整backward
     x->backward = (update[0] == zsl->header) ? NULL : update[0];
     if (x->level[0].forward)
         x->level[0].forward->backward = x;

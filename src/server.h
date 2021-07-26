@@ -994,20 +994,21 @@ struct sharedObjectsStruct {
 };
 
 /* ZSETs use a specialized version of Skiplists */
+// 跳表 节点
 typedef struct zskiplistNode {
-    sds ele;
-    double score;
-    struct zskiplistNode *backward;
+    sds ele; // 节点数据
+    double score; // 节点分值
+    struct zskiplistNode *backward; // 后退指针，用来逆序遍历
     struct zskiplistLevel {
-        struct zskiplistNode *forward;
-        unsigned long span;
-    } level[];
+        struct zskiplistNode *forward; //指向本层（数组的索引即为高度）下一个节点，尾节点的forward指向NULL
+        unsigned long span; //forward指向的节点与本节点之间的元素个数。span值越大，跳过的节点个数越多。
+    } level[]; // 柔性数组 每个节点的数组长度不一样，在生成跳跃表节点时，随机生成一个1～64的值，值越大出现的概率越低
 } zskiplistNode;
-
+// 跳表主结构
 typedef struct zskiplist {
     struct zskiplistNode *header, *tail;
-    unsigned long length;
-    int level;
+    unsigned long length; // 跳表长度，除了头节点外的所有节点数
+    int level; // 跳表高度
 } zskiplist;
 
 typedef struct zset {
