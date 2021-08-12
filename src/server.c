@@ -2474,7 +2474,7 @@ void afterSleep(struct aeEventLoop *eventLoop) {
 }
 
 /* =========================== Server initialization ======================== */
-
+/* 初始化一些缓存数据 */
 void createSharedObjects(void) {
     int j;
 
