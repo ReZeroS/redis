@@ -34,6 +34,10 @@
 #define ZIPLIST_HEAD 0
 #define ZIPLIST_TAIL 1
 
+// ziplist 节省了内存开销，可它也存在两个设计代价：一是不能保存过多的元素，否则访问性能会降低；
+// 二是不能保存过大的元素，否则容易导致内存重新分配，甚至可能引发连锁更新的问题。
+// 所谓的连锁更新，简单来说，就是 ziplist 中的每一项都要被重新分配内存空间，造成 ziplist 的性能降低。
+
 /* Each entry in the ziplist is either a string or an integer. */
 typedef struct {
     /* When string is used, it is provided with the length (slen). */

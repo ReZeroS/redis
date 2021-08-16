@@ -223,11 +223,16 @@ int lpStringToInt64(const char *s, unsigned long slen, int64_t *value) {
  * Pre-allocate at least `capacity` bytes of memory,
  * over-allocated memory can be shrinked by `lpShrinkToFit`.
  * */
+// listpack 解决了 ziplist 连锁更新的问题，但是还是没有解决元素多的时候，查询复杂度高的问题
+// 目前只有stream 用到了 listpack，而listpack 的设计初衷是为了替换 ziplist
 unsigned char *lpNew(size_t capacity) {
+    //lpNew 函数创建了一个空的 listpack，一开始分配的大小是 LP_HDR_SIZE 再加 1 个字节
+    // LP_HDR_SIZE 宏定义是在 listpack.c 中，它默认是 6 个字节，其中 4 个字节是记录 listpack 的总字节数，2 个字节是记录 listpack 的元素数量
     unsigned char *lp = lp_malloc(capacity > LP_HDR_SIZE+1 ? capacity : LP_HDR_SIZE+1);
     if (lp == NULL) return NULL;
     lpSetTotalBytes(lp,LP_HDR_SIZE+1);
     lpSetNumElements(lp,0);
+    // 同ziplist 结尾标记
     lp[LP_HDR_SIZE] = LP_EOF;
     return lp;
 }

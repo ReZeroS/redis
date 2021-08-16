@@ -1006,6 +1006,7 @@ typedef struct zskiplistNode {
     } level[]; // 柔性数组 每个节点的数组长度不一样，在生成跳跃表节点时，随机生成一个1～64的值，值越大出现的概率越低
 } zskiplistNode;
 // 跳表主结构
+// 跳表的高度不能采用二分的形式：因为删除节点后导致的影响是需要调整后面的大量节点来维持 2：1 的关系
 typedef struct zskiplist {
     struct zskiplistNode *header, *tail;
     unsigned long length; // 跳表长度，除了头节点外的所有节点数

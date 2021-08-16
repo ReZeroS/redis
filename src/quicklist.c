@@ -482,12 +482,16 @@ REDIS_STATIC int _quicklistNodeAllowMerge(const quicklistNode *a,
  * Returns 1 if new head created. */
 int quicklistPushHead(quicklist *quicklist, void *value, size_t sz) {
     quicklistNode *orig_head = quicklist->head;
+
+    //单个 ziplist 是否不超过 8KB，或是单个 ziplist 里的元素个数是否满足要求。
+    //只要这里面的一个条件能满足，quicklist 就可以在当前的 quicklistNode 中插入新元素
     if (likely(
             _quicklistNodeAllowInsert(quicklist->head, quicklist->fill, sz))) {
         quicklist->head->zl =
             ziplistPush(quicklist->head->zl, value, sz, ZIPLIST_HEAD);
         quicklistNodeUpdateSz(quicklist->head);
     } else {
+        // 否则 quicklist 就会新建一个 quicklistNode，以此来保存新插入的元素。
         quicklistNode *node = quicklistCreateNode();
         node->zl = ziplistPush(ziplistNew(), value, sz, ZIPLIST_HEAD);
 

@@ -136,6 +136,7 @@ int zslRandomLevel(void) {
 /* Insert a new node in the skiplist. Assumes the element does not already
  * exist (up to the caller to enforce that). The skiplist takes ownership
  * of the passed SDS string 'ele'. */
+//当查找到的结点保存的元素权重，比要查找的权重小时，跳表就会继续访问该层上的下一个结点
 zskiplistNode *zslInsert(zskiplist *zsl, double score, sds ele) {
     // 插入节点时，需要更新被插入节点每层的前一个节点。由于每层更新的节点不一样，所以将每层需要更新的节点记录在update[i]中
     // rank 记录当前层从header节点到update[i]节点所经历的步长，在更新update[i]的span和设置新插入节点的span时用到
@@ -145,8 +146,8 @@ zskiplistNode *zslInsert(zskiplist *zsl, double score, sds ele) {
 
     serverAssert(!isnan(score));
     x = zsl->header;
-    // 找到要更新节点的逻辑
-    // 外层循环控制高度，由高到低
+    // 当查询一个结点时，跳表会先从头结点的最高层开始，查找下一个结点:外层循环控制高度，由高到低
+    //3. 当上述两个条件都不满足时，跳表就会用到当前查找到的结点的 level 数组了。跳表会使用当前结点 level 数组里的下一层指针，然后沿着下一层指针继续查找，这就相当于跳到了下一层接着查找。
     for (i = zsl->level-1; i >= 0; i--) {
         /* store rank that is crossed to reach the insert position */
         rank[i] = i == (zsl->level-1) ? 0 : rank[i+1];
@@ -154,11 +155,15 @@ zskiplistNode *zslInsert(zskiplist *zsl, double score, sds ele) {
         // 若该层的后节点x->level[i].forward有值，且该节点
         // score小于当前score 或 score 相等但是ele小于当前ele
         // 这也就说明在找到位置e之前，我们尽可能的已经遍历并记录了比当前score小的元素
+
+        //1. 当查找到的结点保存的元素权重，比要查找的权重小时，跳表就会继续访问该层上的下一个结点。
+        //2. 当查找到的结点保存的元素权重，等于要查找的权重时，跳表会再检查该结点保存的 SDS 类型数据，是否比要查找的 SDS 数据小。如果结点数据小于要查找的数据时，跳表仍然会继续访问该层上的下一个结点。
         while (x->level[i].forward &&
-                (x->level[i].forward->score < score ||
-                    (x->level[i].forward->score == score &&
-                    sdscmp(x->level[i].forward->ele,ele) < 0)))
-        {
+                (
+                  x->level[i].forward->score < score || // 1
+                      (x->level[i].forward->score == score && sdscmp(x->level[i].forward->ele,ele) < 0) // 2
+                )
+        ){
             rank[i] += x->level[i].span;
             x = x->level[i].forward;
         }
@@ -1205,6 +1210,7 @@ void zsetConvert(robj *zobj, int encoding) {
         if (encoding != OBJ_ENCODING_SKIPLIST)
             serverPanic("Unknown target encoding");
 
+        // 同时创建出 hash表 和 zsl
         zs = zmalloc(sizeof(*zs));
         zs->dict = dictCreate(&zsetDictType,NULL);
         zs->zsl = zslCreate();
@@ -1353,6 +1359,7 @@ int zsetAdd(robj *zobj, double score, sds ele, int in_flags, int *out_flags, dou
     }
 
     /* Update the sorted set according to its encoding. */
+    // 区分当前结构 是 ziplist 还是 skiplist
     if (zobj->encoding == OBJ_ENCODING_ZIPLIST) {
         unsigned char *eptr;
 
@@ -1405,8 +1412,9 @@ int zsetAdd(robj *zobj, double score, sds ele, int in_flags, int *out_flags, dou
         zset *zs = zobj->ptr;
         zskiplistNode *znode;
         dictEntry *de;
-
+        // 先去 hash 表中查该元素
         de = dictFind(zs->dict,ele);
+        // 如果存在，证明已有，此时会考虑是否提高该元素的权重
         if (de != NULL) {
             /* NX? Return, same element already exists. */
             if (nx) {
@@ -1434,6 +1442,7 @@ int zsetAdd(robj *zobj, double score, sds ele, int in_flags, int *out_flags, dou
             if (newscore) *newscore = score;
 
             /* Remove and re-insert when score changes. */
+            // 权重值发生了变化，则更新权重值
             if (score != curscore) {
                 znode = zslUpdateScore(zs->zsl,curscore,ele,score);
                 /* Note that we did not removed the original element from
@@ -1444,8 +1453,11 @@ int zsetAdd(robj *zobj, double score, sds ele, int in_flags, int *out_flags, dou
             }
             return 1;
         } else if (!xx) {
+            // 如果不存在于 dic 中
             ele = sdsdup(ele);
+            // 插入 zsl
             znode = zslInsert(zs->zsl,score,ele);
+            // 插入 hash 表
             serverAssert(dictAdd(zs->dict,ele,&znode->score) == DICT_OK);
             *out_flags |= ZADD_OUT_ADDED;
             if (newscore) *newscore = score;
