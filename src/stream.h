@@ -13,10 +13,12 @@ typedef struct streamID {
     uint64_t seq;       /* Sequence number. */
 } streamID;
 
+// Stream 作为消息队列，它保存的消息通常具有以下两个特征：一条消息由一个或多个键值对组成；每插入一条消息，这条消息都会对应一个消息 ID。
+// 简单说就是带有压缩非压缩两类节点的 Trie 树，其
 typedef struct stream {
     rax *rax;               /* The radix tree holding the stream. */
     uint64_t length;        /* Number of elements inside this stream. */
-    streamID last_id;       /* Zero if there are yet no items. */
+    streamID last_id;       /* Zero if there are yet no items. */ //当前消息流中最后插入的消息的ID
     rax *cgroups;           /* Consumer groups dictionary: name -> streamCG */
 } stream;
 

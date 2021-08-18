@@ -96,10 +96,13 @@
 
 #define RAX_NODE_MAX_SIZE ((1<<29)-1)
 typedef struct raxNode {
+    //表示从 Radix Tree 的根节点到当前节点路径上的字符组成的字符串，是否表示了一个完整的 key。
+    // 如果是的话，那么 iskey 的值为 1。否则，iskey 的值为 0。不过，这里需要注意的是，当前节点所表示的 key，并不包含该节点【自身的内容】。
     uint32_t iskey:1;     /* Does this node contain a key? */
     uint32_t isnull:1;    /* Associated value is NULL (don't store it). */
     uint32_t iscompr:1;   /* Node is compressed. */
     uint32_t size:29;     /* Number of children, or compressed string len. */
+    // 如果当前节点是压缩节点，该值表示压缩数据的长度；如果是非压缩节点，该值表示该节点指向的子节点个数。
     /* Data layout is as follows:
      *
      * If node is not compressed we have 'size' bytes, one for each children
@@ -127,9 +130,18 @@ typedef struct raxNode {
      * children, an additional value pointer is present (as you can see
      * in the representation above as "value-ptr" field).
      */
-    unsigned char data[];
+    unsigned char data[]; // 实际存储的数据
+    // 对于非压缩节点来说，data 数组包括子节点对应的字符、指向子节点的指针，以及节点表示 key 时对应的 value 指针；
+    // 对于压缩节点来说，data 数组包括子节点对应的合并字符串、指向子节点的指针，以及节点为 key 时的 value 指针。
 } raxNode;
 
+//它们所代表的 key，是从根节点到当前节点路径上的字符串，但 [并不包含当前节点] ；
+// 它们本身就已经包含了子节点代表的字符或合并字符串。
+// 而对于它们的子节点来说，也都属于非压缩或压缩节点，所以，子节点本身又会保存，子节点的子节点所代表的字符或合并字符串。
+
+
+// 一方面，Radix Tree 非叶子节点，要不然是压缩节点，只指向单个子节点，要不然是非压缩节点，指向多个子节点，但每个子节点只表示一个字符。
+// 所以，非叶子节点无法同时指向表示单个字符的子节点和表示合并字符串的子节点
 typedef struct rax {
     raxNode *head;
     uint64_t numele;
