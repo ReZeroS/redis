@@ -3161,6 +3161,7 @@ void initServer(void) {
     server.clients = listCreate();
     server.clients_index = raxNew();
     server.clients_to_close = listCreate();
+    // 创建链表从库
     server.slaves = listCreate();
     server.monitors = listCreate();
     server.clients_pending_write = listCreate();
@@ -3184,11 +3185,12 @@ void initServer(void) {
         serverLog(LL_WARNING, "Failed to configure TLS. Check logs for more info.");
         exit(1);
     }
-
+    // 初始化缓存数据
     createSharedObjects();
     adjustOpenFilesLimit();
     const char *clk_msg = monotonicInit();
     serverLog(LL_NOTICE, "monotonic clock: %s", clk_msg);
+    //创建事件循环框架
     server.el = aeCreateEventLoop(server.maxclients+CONFIG_FDSET_INCR);
     if (server.el == NULL) {
         serverLog(LL_WARNING,
@@ -3235,11 +3237,14 @@ void initServer(void) {
     for (j = 0; j < server.dbnum; j++) {
         // dict 比较重要，因为key val 的数据结构主要就是存在这里
         server.db[j].dict = dictCreate(&dbDictType,NULL);
-        // 保存过期键用的一些数据
+        // 创建过期key的信息表
         server.db[j].expires = dictCreate(&dbExpiresDictType,NULL);
         server.db[j].expires_cursor = 0;
+        //为被BLPOP阻塞的key创建信息表
         server.db[j].blocking_keys = dictCreate(&keylistDictType,NULL);
+        //为将执行PUSH的阻塞key创建信息表
         server.db[j].ready_keys = dictCreate(&objectKeyPointerValueDictType,NULL);
+        //为被MULTI/WATCH操作监听的key创建信息表
         server.db[j].watched_keys = dictCreate(&keylistDictType,NULL);
         server.db[j].id = j;
         server.db[j].avg_ttl = 0;
@@ -3273,6 +3278,7 @@ void initServer(void) {
     server.rdb_save_time_last = -1;
     server.rdb_save_time_start = -1;
     server.dirty = 0;
+    // 重置server运行态
     resetServerStats();
     /* A few stats we don't want to reset: server startup time, and peak mem. */
     server.stat_starttime = time(NULL);
@@ -6203,6 +6209,7 @@ int main(int argc, char **argv) {
 #ifdef INIT_SETPROCTITLE_REPLACEMENT
     spt_init(argc, argv);
 #endif
+    //设置时区
     setlocale(LC_COLLATE,"");
     tzset(); /* Populates 'timezone' global. */
     zmalloc_set_oom_handler(redisOutOfMemoryHandler);
@@ -6217,10 +6224,11 @@ int main(int argc, char **argv) {
      * race condition with threads that could be creating files or directories.
      */
     umask(server.umask = umask(0777));
-
+    //设置随机种子
     uint8_t hashseed[16];
     getRandomBytes(hashseed,sizeof(hashseed));
     dictSetHashFunctionSeed(hashseed);
+    // 检查是否是哨兵模式
     server.sentinel_mode = checkForSentinelMode(argc,argv);
     // 初始化服务端配置
     initServerConfig();
@@ -6240,13 +6248,14 @@ int main(int argc, char **argv) {
      * in sentinel mode will have the effect of populating the sentinel
      * data structures with master nodes to monitor. */
     if (server.sentinel_mode) {
-        initSentinelConfig();
-        initSentinel();
+        initSentinelConfig(); // 初始化哨兵配置
+        initSentinel(); // 初始化哨兵模式
     }
 
     /* Check if we need to start in redis-check-rdb/aof mode. We just execute
      * the program main. However the program is part of the Redis executable
      * so that we can easily execute an RDB check on loading errors. */
+    // 小程序检查 RDB/AOF 文件
     if (strstr(argv[0],"redis-check-rdb") != NULL)
         redis_check_rdb_main(argc,argv,NULL);
     else if (strstr(argv[0],"redis-check-aof") != NULL)
@@ -6303,7 +6312,7 @@ int main(int argc, char **argv) {
             }
             j++;
         }
-
+        //
         loadServerConfig(server.configfile, config_from_stdin, options);
         if (server.sentinel_mode) loadSentinelConfigFromQueue();
         sdsfree(options);
@@ -6362,7 +6371,7 @@ int main(int argc, char **argv) {
         moduleLoadFromQueue();
         ACLLoadUsersAtStartup();
         InitServerLast();
-        // server 启动时读一下 rdb 或者 aof
+        // server 启动时读一下 rdb 或者 aof，以便恢复之前的数据
         loadDataFromDisk();
         if (server.cluster_enabled) {
             if (verifyClusterConfigWithData() == C_ERR) {
@@ -6387,6 +6396,8 @@ int main(int argc, char **argv) {
     } else {
         ACLLoadUsersAtStartup();
         InitServerLast();
+
+        // 设置哨兵模式
         sentinelIsRunning();
         if (server.supervised_mode == SUPERVISED_SYSTEMD) {
             redisCommunicateSystemd("STATUS=Ready to accept connections\n");

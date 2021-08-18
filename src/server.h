@@ -88,6 +88,7 @@ typedef long long ustime_t; /* microsecond time type. */
 #define C_OK                    0
 #define C_ERR                   -1
 
+// CONFIG_DEFAULT 前缀的是系统默认的一些配置项
 /* Static server configuration */
 #define CONFIG_DEFAULT_HZ        10             /* Time interrupt calls/sec. */
 #define CONFIG_MIN_HZ            1

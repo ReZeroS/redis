@@ -84,6 +84,7 @@ static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
     if (mask & AE_READABLE) ee.events |= EPOLLIN;
     if (mask & AE_WRITABLE) ee.events |= EPOLLOUT;
     ee.data.fd = fd;
+    // 注册监听事件和处理函数
     if (epoll_ctl(state->epfd,op,fd,&ee) == -1) return -1;
     return 0;
 }
@@ -109,13 +110,14 @@ static void aeApiDelEvent(aeEventLoop *eventLoop, int fd, int delmask) {
 static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
     aeApiState *state = eventLoop->apidata;
     int retval, numevents = 0;
-
+    // 其实就是调用了 epoll.wait
     retval = epoll_wait(state->epfd,state->events,eventLoop->setsize,
             tvp ? (tvp->tv_sec*1000 + (tvp->tv_usec + 999)/1000) : -1);
     if (retval > 0) {
         int j;
-
+        //获得监听到的事件数量
         numevents = retval;
+        //针对每一个事件，进行处理
         for (j = 0; j < numevents; j++) {
             int mask = 0;
             struct epoll_event *e = state->events+j;
@@ -124,6 +126,7 @@ static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
             if (e->events & EPOLLOUT) mask |= AE_WRITABLE;
             if (e->events & EPOLLERR) mask |= AE_WRITABLE|AE_READABLE;
             if (e->events & EPOLLHUP) mask |= AE_WRITABLE|AE_READABLE;
+            // 保存事件信息
             eventLoop->fired[j].fd = e->data.fd;
             eventLoop->fired[j].mask = mask;
         }

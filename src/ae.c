@@ -350,12 +350,14 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
     int processed = 0, numevents;
 
     /* Nothing to do? return ASAP */
+    /* 若没有事件处理，则立刻返回*/
     if (!(flags & AE_TIME_EVENTS) && !(flags & AE_FILE_EVENTS)) return 0;
 
     /* Note that we want to call select() even if there are no
      * file events to process as long as we want to process time
      * events, in order to sleep until the next time event is ready
      * to fire. */
+    /*如果有IO事件发生，或者紧急的时间事件发生，则开始处理*/
     if (eventLoop->maxfd != -1 ||
         ((flags & AE_TIME_EVENTS) && !(flags & AE_DONT_WAIT))) {
         int j;
@@ -392,6 +394,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
 
         /* Call the multiplexing API, will return only on timeout or when
          * some event fires. */
+        //调用aeApiPoll函数捕获事件
         numevents = aeApiPoll(eventLoop, tvp);
 
         /* After sleep callback. */
@@ -453,6 +456,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
         }
     }
     /* Check time events */
+    /* 检查是否有时间事件，若有，则调用processTimeEvents函数处理 */
     if (flags & AE_TIME_EVENTS)
         processed += processTimeEvents(eventLoop);
 

@@ -674,6 +674,7 @@ void loadServerConfig(char *filename, char config_from_stdin, char *options) {
         config = sdscat(config,"\n");
         config = sdscat(config,options);
     }
+    // 最终将配置项都设置到server上
     loadServerConfigFromString(config);
     sdsfree(config);
 }
