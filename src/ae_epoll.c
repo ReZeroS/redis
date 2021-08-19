@@ -32,19 +32,21 @@
 #include <sys/epoll.h>
 
 typedef struct aeApiState {
-    int epfd;
-    struct epoll_event *events;
+    int epfd; //epoll实例的描述符
+    struct epoll_event *events; //epoll_event结构体数组，记录监听事件
 } aeApiState;
 
 static int aeApiCreate(aeEventLoop *eventLoop) {
     aeApiState *state = zmalloc(sizeof(aeApiState));
 
     if (!state) return -1;
+    //将epoll_event数组保存在aeApiState结构体变量state中
     state->events = zmalloc(sizeof(struct epoll_event)*eventLoop->setsize);
     if (!state->events) {
         zfree(state);
         return -1;
     }
+    //将epoll实例描述符保存在aeApiState结构体变量state中
     state->epfd = epoll_create(1024); /* 1024 is just a hint for the kernel */
     if (state->epfd == -1) {
         zfree(state->events);
@@ -72,19 +74,24 @@ static void aeApiFree(aeEventLoop *eventLoop) {
 }
 
 static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
+    //从eventLoop结构体中获取aeApiState变量，里面保存了epoll实例
     aeApiState *state = eventLoop->apidata;
+    //创建epoll_event类型变量
     struct epoll_event ee = {0}; /* avoid valgrind warning */
-    /* If the fd was already monitored for some event, we need a MOD
+    /* If the fd was already monitored for some event, we need a MODIFY
      * operation. Otherwise we need an ADD operation. */
     int op = eventLoop->events[fd].mask == AE_NONE ?
             EPOLL_CTL_ADD : EPOLL_CTL_MOD;
 
     ee.events = 0;
+
     mask |= eventLoop->events[fd].mask; /* Merge old events */
+    //将可读或可写IO事件类型转换为epoll监听的类型EPOLLIN或EPOLLOUT
     if (mask & AE_READABLE) ee.events |= EPOLLIN;
     if (mask & AE_WRITABLE) ee.events |= EPOLLOUT;
+    //将要监听的文件描述符赋值给ee
     ee.data.fd = fd;
-    // 注册监听事件和处理函数
+    // 注册监听事件和处理函数，参数：ee监听事件类型和监听文件描述符， epfd
     if (epoll_ctl(state->epfd,op,fd,&ee) == -1) return -1;
     return 0;
 }

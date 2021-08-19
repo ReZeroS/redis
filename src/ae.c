@@ -68,12 +68,14 @@ aeEventLoop *aeCreateEventLoop(int setsize) {
     int i;
 
     monotonicInit();    /* just in case the calling app didn't initialize */
-
+    // 分配内存：给 IO 事件数组和已触发事件数组分配相应的内存空间。
     if ((eventLoop = zmalloc(sizeof(*eventLoop))) == NULL) goto err;
+    // 此外，该函数还会给 eventLoop 的成员变量 IO事件，已触发事件 分配空间
     eventLoop->events = zmalloc(sizeof(aeFileEvent)*setsize);
     eventLoop->fired = zmalloc(sizeof(aeFiredEvent)*setsize);
     if (eventLoop->events == NULL || eventLoop->fired == NULL) goto err;
     eventLoop->setsize = setsize;
+    //初始化时间事件的链表头为NULL
     eventLoop->timeEventHead = NULL;
     eventLoop->timeEventNextId = 0;
     eventLoop->stop = 0;
@@ -81,13 +83,17 @@ aeEventLoop *aeCreateEventLoop(int setsize) {
     eventLoop->beforesleep = NULL;
     eventLoop->aftersleep = NULL;
     eventLoop->flags = 0;
+    // aeApiCreate 函数封装了操作系统提供的 IO 多路复用函数，假设 Redis 运行在 Linux 操作系统上，
+    // 并且 IO 多路复用机制是 epoll，那么此时，aeApiCreate 函数就会调用 epoll_create 创建 epoll 实例，
+    // 同时会创建 epoll_event 结构的数组，数组大小等于参数 setsize。
     if (aeApiCreate(eventLoop) == -1) goto err;
     /* Events with mask == AE_NONE are not set. So let's initialize the
      * vector with it. */
+    //将所有网络IO事件对应文件描述符的掩码设置为AE_NONE
     for (i = 0; i < setsize; i++)
         eventLoop->events[i].mask = AE_NONE;
     return eventLoop;
-
+// 失败异常的处理
 err:
     if (eventLoop) {
         zfree(eventLoop->events);
@@ -153,7 +159,7 @@ void aeDeleteEventLoop(aeEventLoop *eventLoop) {
 void aeStop(aeEventLoop *eventLoop) {
     eventLoop->stop = 1;
 }
-
+//参数 分别是循环流程结构体 *eventLoop、IO 事件对应的文件描述符 fd、事件类型掩码 mask、事件处理回调函数*proc，以及事件私有数据*clientData
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
         aeFileProc *proc, void *clientData)
 {
@@ -161,8 +167,9 @@ int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
         errno = ERANGE;
         return AE_ERR;
     }
+    // 在 eventLoop 的 IO 事件数组中，获取该描述符关联的 IO 事件指针变量*fe
     aeFileEvent *fe = &eventLoop->events[fd];
-
+    //aeCreateFileEvent 函数会调用 aeApiAddEvent 函数，添加要监听的事件
     if (aeApiAddEvent(eventLoop, fd, mask) == -1)
         return AE_ERR;
     fe->mask |= mask;
@@ -208,11 +215,13 @@ long long aeCreateTimeEvent(aeEventLoop *eventLoop, long long milliseconds,
         aeEventFinalizerProc *finalizerProc)
 {
     long long id = eventLoop->timeEventNextId++;
+    // 创建时间事件
     aeTimeEvent *te;
 
     te = zmalloc(sizeof(*te));
     if (te == NULL) return AE_ERR;
     te->id = id;
+    // 设置时间
     te->when = getMonotonicUs() + milliseconds * 1000;
     te->timeProc = proc;
     te->finalizerProc = finalizerProc;
@@ -264,14 +273,16 @@ static int64_t usUntilEarliestTimer(aeEventLoop *eventLoop) {
 }
 
 /* Process time events */
+// 基本流程就是从时间事件链表上逐一取出每一个事件，然后根据当前时间判断该事件的触发时间戳是否已满足。
+// 如果已满足，那么就调用该事件对应的回调函数进行处理。这样一来，周期性任务就能在不断循环执行的 aeProcessEvents 函数中，得到执行了。
 static int processTimeEvents(aeEventLoop *eventLoop) {
     int processed = 0;
     aeTimeEvent *te;
     long long maxId;
 
-    te = eventLoop->timeEventHead;
+    te = eventLoop->timeEventHead;//从时间事件链表中取出事件
     maxId = eventLoop->timeEventNextId-1;
-    monotime now = getMonotonicUs();
+    monotime now = getMonotonicUs();//获取当前时间
     while(te) {
         long long id;
 
@@ -315,6 +326,7 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
 
             id = te->id;
             te->refcount++;
+            ////调用注册的回调函数处理
             retval = te->timeProc(eventLoop, id, te->clientData);
             te->refcount--;
             processed++;
@@ -325,6 +337,7 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
                 te->id = AE_DELETED_EVENT_ID;
             }
         }
+        ////获取下一个时间事件
         te = te->next;
     }
     return processed;
@@ -426,6 +439,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
              *
              * Fire the readable event if the call sequence is not
              * inverted. */
+            //如果触发的是可读事件，调用事件注册时设置的读事件回调处理函数
             if (!invert && fe->mask & mask & AE_READABLE) {
                 fe->rfileProc(eventLoop,fd,fe->clientData,mask);
                 fired++;
@@ -433,6 +447,7 @@ int aeProcessEvents(aeEventLoop *eventLoop, int flags)
             }
 
             /* Fire the writable event. */
+            //如果触发的是可写事件，调用事件注册时设置的写事件回调处理函数
             if (fe->mask & mask & AE_WRITABLE) {
                 if (!fired || fe->wfileProc != fe->rfileProc) {
                     fe->wfileProc(eventLoop,fd,fe->clientData,mask);

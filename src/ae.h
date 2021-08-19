@@ -84,11 +84,11 @@ typedef struct aeFileEvent {
 /* Time event structure */
 typedef struct aeTimeEvent {
     long long id; /* time event identifier. */
-    monotime when;
-    aeTimeProc *timeProc;
-    aeEventFinalizerProc *finalizerProc;
+    monotime when; // 时间
+    aeTimeProc *timeProc; // 时间事件触发后的处理函数
+    aeEventFinalizerProc *finalizerProc; // 事件结束后的处理函数
     void *clientData;
-    struct aeTimeEvent *prev;
+    struct aeTimeEvent *prev;//时间事件链表的前向指针
     struct aeTimeEvent *next;
     int refcount; /* refcount to prevent timer events from being
   		   * freed in recursive time event calls. */
@@ -105,13 +105,13 @@ typedef struct aeEventLoop {
     int maxfd;   /* highest file descriptor currently registered */
     int setsize; /* max number of file descriptors tracked */
     long long timeEventNextId;
-    aeFileEvent *events; /* Registered events */
-    aeFiredEvent *fired; /* Fired events */
-    aeTimeEvent *timeEventHead;
+    aeFileEvent *events; /* Registered events */ //IO事件数组
+    aeFiredEvent *fired; /* Fired events *///已触发事件数组 base address
+    aeTimeEvent *timeEventHead; //记录时间事件的链表头
     int stop;
     void *apidata; /* This is used for polling API specific data */
-    aeBeforeSleepProc *beforesleep;
-    aeBeforeSleepProc *aftersleep;
+    aeBeforeSleepProc *beforesleep; //进入事件循环流程前执行的函数
+    aeBeforeSleepProc *aftersleep; //退出事件循环流程后执行的函数
     int flags;
 } aeEventLoop;
 

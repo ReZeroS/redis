@@ -91,4 +91,17 @@ while (1) {
  - ae_epoll.c，对应 Linux 上的 IO 复用函数 epoll；
  - ae_evport.c，对应 Solaris 上的 IO 复用函数 evport；
  - ae_kqueue.c，对应 macOS 或 FreeBSD 上的 IO 复用函数 kqueue；
- - ae_select.c，对应 Linux（或 Windows）的 IO 复用函数 select。
+ - ae_select.c，对应 Linux（或 Windows）的 IO 复用函数 select。 
+
+### Redis 事件驱动框架中的两类事件：IO 事件和时间事件
+
+```c
+对于 IO 事件来说，它可以进一步分成可读、可写和屏障事件。
+因为可读、可写事件在 Redis 和客户端通信处理请求过程中使用广泛，所以今天我们重点学习了这两种 IO 事件。
+当 Redis server 创建 Socket 后，就会注册可读事件，并使用 acceptTCPHandler 回调函数处理客户端的连接请求。
+当 server 和客户端完成连接建立后，server 会在已连接套接字上监听可读事件，并使用 readQueryFromClient 函数处理客户端读写请求。
+这里，你需要再注意下，无论客户端发送的请求是读或写操作，对于 server 来说，都是要读取客户端的请求并解析处理。
+所以，server 在客户端的已连接套接字上注册的是可读事件。
+而当实例需要向客户端写回数据时，实例会在事件驱动框架中注册可写事件，并使用 sendReplyToClient 作为回调函数，将缓冲区中数据写回客户端。
+我总结了一张表格，以便你再回顾下 IO 事件和相应套接字、回调函数的对应关系。
+```
