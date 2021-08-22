@@ -5578,13 +5578,14 @@ void createPidFile(void) {
 
 void daemonize(void) {
     int fd;
-
+    //fork成功执行或失败，则父进程退出
     if (fork() != 0) exit(0); /* parent exits */
-    setsid(); /* create a new session */
+    setsid(); /* create a new session *///为子进程创建新的session
 
     /* Every output goes to /dev/null. If Redis is daemonized but
      * the 'logfile' is set to 'stdout' in the configuration file
-     * it will not log at all. */
+    * it will not log at all. */
+    //将子进程的标准输入、标准输出、标准错误输出重定向到/dev/null中
     if ((fd = open("/dev/null", O_RDWR, 0)) != -1) {
         dup2(fd, STDIN_FILENO);
         dup2(fd, STDOUT_FILENO);
@@ -6326,7 +6327,9 @@ int main(int argc, char **argv) {
     }
     if (server.sentinel_mode) sentinelCheckConfigFile();
     server.supervised = redisIsSupervised(server.supervised_mode);
+    //如果配置参数daemonize为1，supervised值为0，那么设置background值为1，否则，设置其为0
     int background = server.daemonize && !server.supervised;
+    //如果background值为1，调用daemonize函数。
     if (background) daemonize();
 
     serverLog(LL_WARNING, "oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo");
