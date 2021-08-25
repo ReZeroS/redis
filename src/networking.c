@@ -206,8 +206,9 @@ void clientInstallWriteHandler(client *c) {
     /* Schedule the client to write the output buffers to the socket only
      * if not already done and, for slaves, if the slave can actually receive
      * writes at this stage. */
-    if (!(c->flags & CLIENT_PENDING_WRITE) &&
-        (c->replstate == REPL_STATE_NONE ||
+    if (!(c->flags & CLIENT_PENDING_WRITE) && //客户端没有设置过 CLIENT_PENDING_WRITE 标识，即没有被推迟过执行写操作。
+        (c->replstate == REPL_STATE_NONE || //客户端所在实例没有进行主从复制
+        //或者客户端所在实例是主从复制中的从节点，但全量复制的 RDB 文件已经传输完成，客户端可以接收请求
          (c->replstate == SLAVE_STATE_ONLINE && !c->repl_put_online_on_ack)))
     {
         /* Here instead of installing the write handler, we just flag the
@@ -268,6 +269,7 @@ int prepareClientToWrite(client *c) {
      * not install a write handler. Instead, it will be done by
      * handleClientsWithPendingReadsUsingThreads() upon return.
      */
+    ////如果当前客户端没有待写回数据，调用clientInstallWriteHandler函数
     if (!clientHasPendingReplies(c) && !(c->flags & CLIENT_PENDING_READ))
             clientInstallWriteHandler(c);
 
@@ -345,6 +347,7 @@ void _addReplyProtoToList(client *c, const char *s, size_t len) {
 
 /* Add the object 'obj' string representation to the client output buffer. */
 void addReply(client *c, robj *obj) {
+    //判断是否推迟执行客户端写操作
     if (prepareClientToWrite(c) != C_OK) return;
 
     if (sdsEncodedObject(obj)) {
@@ -2037,6 +2040,7 @@ int processCommandAndResetClient(client *c) {
  * the client. Returns C_ERR if the client is no longer valid after executing
  * the command, and C_OK for all other cases. */
 int processPendingCommandsAndResetClient(client *c) {
+    ////如果命令已经解析过，则执行该命令
     if (c->flags & CLIENT_PENDING_COMMAND) {
         c->flags &= ~CLIENT_PENDING_COMMAND;
         if (processCommandAndResetClient(c) == C_ERR) {
@@ -2139,6 +2143,7 @@ void readQueryFromClient(connection *conn) {
 
     /* Check if we want to read from the client later when exiting from
      * the event loop. This is the case if threaded I/O is enabled. */
+    //能否推迟从客户端读取数据
     if (postponeClientRead(c)) return;
 
     /* Update total number of reads on server */
@@ -3382,6 +3387,7 @@ int checkClientPauseTimeoutAndReturnIfPaused(void) {
  * write, close sequence needed to serve a client.
  *
  * The function returns the total number of events processed. */
+//当 Redis 在读取 RDB 文件或是 AOF 文件时，这个函数会被调用，用来处理事件驱动框架捕获到的事件
 void processEventsWhileBlocked(void) {
     int iterations = 4; /* See the function top-comment. */
 
@@ -3469,6 +3475,7 @@ void *IOThreadMain(void *myid) {
          * before we drop the pending count to 0. */
         listIter li;
         listNode *ln;
+        //获取IO线程要处理的客户端列表
         listRewind(io_threads_list[id],&li);
         while((ln = listNext(&li))) {
             client *c = listNodeValue(ln);
@@ -3480,7 +3487,9 @@ void *IOThreadMain(void *myid) {
                 serverPanic("io_threads_op value is unknown");
             }
         }
+        //处理完所有客户端后，清空该线程的客户端列表
         listEmpty(io_threads_list[id]);
+        //将该线程的待处理任务数量设置为0
         setIOPendingCount(id, 0);
     }
 }
@@ -3502,18 +3511,22 @@ void initThreadedIO(void) {
     /* Spawn and initialize the I/O threads. */
     for (int i = 0; i < server.io_threads_num; i++) {
         /* Things we do for all the threads including the main thread. */
+        ////记录线程对应处理的客户端
         io_threads_list[i] = listCreate();
-        if (i == 0) continue; /* Thread 0 is the main thread. */
+        if (i == 0) continue; /* Thread 0 is the main thread. */ // 0 是 server 主线程
 
         /* Things we do only for the additional threads. */
         pthread_t tid;
+        ////记录线程互斥锁的数组
         pthread_mutex_init(&io_threads_mutex[i],NULL);
+        //记录线程待处理的客户端个数
         setIOPendingCount(i, 0);
         pthread_mutex_lock(&io_threads_mutex[i]); /* Thread will be stopped. */
         if (pthread_create(&tid,NULL,IOThreadMain,(void*)(long)i) != 0) {
             serverLog(LL_WARNING,"Fatal: Can't initialize IO thread.");
             exit(1);
         }
+        ////记录线程描述符的数组
         io_threads[i] = tid;
     }
 }
@@ -3575,6 +3588,7 @@ int stopThreadedIOIfNeeded(void) {
     }
 }
 
+//该函数主要负责将 clients_pending_write 列表中的客户端分配给 IO 线程进行处理。
 int handleClientsWithPendingWritesUsingThreads(void) {
     int processed = listLength(server.clients_pending_write);
     if (processed == 0) return 0; /* Return ASAP if there are no clients. */
@@ -3660,9 +3674,13 @@ int handleClientsWithPendingWritesUsingThreads(void) {
  * As a side effect of calling this function the client is put in the
  * pending read clients and flagged as such. */
 int postponeClientRead(client *c) {
-    if (server.io_threads_active &&
-        server.io_threads_do_reads &&
-        !ProcessingEventsWhileBlocked &&
+    if (server.io_threads_active && // 全局变量 server 的 io_threads_active 值为 1
+        server.io_threads_do_reads && //io-threads-do-reads 配置项设为 yes
+        !ProcessingEventsWhileBlocked && //processEventsWhileBlokced 函数没有在执行,
+        // 这样就避免了因读取 RDB 或 AOF 文件造成 Redis 阻塞，而无法及时处理事件的情况。
+        // 所以，当 processEventsWhileBlokced 函数执行处理客户端可读事件时，这些客户端读操作是不会被推迟执行的
+
+        // 主从客户端或者已经被设置过延迟读了
         !(c->flags & (CLIENT_MASTER|CLIENT_SLAVE|CLIENT_PENDING_READ)))
     {
         c->flags |= CLIENT_PENDING_READ;
@@ -3679,7 +3697,9 @@ int postponeClientRead(client *c) {
  * the queue using the I/O threads, and process them in order to accumulate
  * the reads in the buffers, and also parse the first command available
  * rendering it in the client structures. */
+//该函数主要负责将 clients_pending_read 列表中的客户端分配给 IO 线程进行处理
 int handleClientsWithPendingReadsUsingThreads(void) {
+    //IO 线程激活，并且 IO 线程可以用于处理待读客户端才继续
     if (!server.io_threads_active || !server.io_threads_do_reads) return 0;
     int processed = listLength(server.clients_pending_read);
     if (processed == 0) return 0;
@@ -3691,6 +3711,7 @@ int handleClientsWithPendingReadsUsingThreads(void) {
     int item_id = 0;
     while((ln = listNext(&li))) {
         client *c = listNodeValue(ln);
+        // 取模循环将客户端赋给不同的线程
         int target_id = item_id % server.io_threads_num;
         listAddNodeTail(io_threads_list[target_id],c);
         item_id++;
@@ -3705,14 +3726,15 @@ int handleClientsWithPendingReadsUsingThreads(void) {
     }
 
     /* Also use the main thread to process a slice of clients. */
-    listRewind(io_threads_list[0],&li);
+    listRewind(io_threads_list[0],&li); ////获取0号列表中的所有客户端
     while((ln = listNext(&li))) {
         client *c = listNodeValue(ln);
         readQueryFromClient(c->conn);
     }
-    listEmpty(io_threads_list[0]);
+    listEmpty(io_threads_list[0]); ////处理完后，清空0号列表
 
     /* Wait for all the other threads to end their work. */
+    //等待所有 IO 线程完成待读客户端的处理z
     while(1) {
         unsigned long pending = 0;
         for (int j = 1; j < server.io_threads_num; j++)
