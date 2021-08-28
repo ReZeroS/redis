@@ -2079,9 +2079,12 @@ void processInputBuffer(client *c) {
 
         /* Determine request type when unknown. */
         if (!c->reqtype) {
+            // 根据命令是否是 * 开头
             if (c->querybuf[c->qb_pos] == '*') {
+                //RESP 协议
                 c->reqtype = PROTO_REQ_MULTIBULK;
             } else {
+                // 管道命令
                 c->reqtype = PROTO_REQ_INLINE;
             }
         }
@@ -2148,7 +2151,7 @@ void readQueryFromClient(connection *conn) {
 
     /* Update total number of reads on server */
     atomicIncr(server.stat_total_reads_processed, 1);
-
+    // 默认读 16KB 的数据
     readlen = PROTO_IOBUF_LEN;
     /* If this is a multi bulk request, and we are processing a bulk reply
      * that is large enough, try to maximize the probability that the query
@@ -2168,8 +2171,8 @@ void readQueryFromClient(connection *conn) {
 
     qblen = sdslen(c->querybuf);
     if (c->querybuf_peak < qblen) c->querybuf_peak = qblen;
-    c->querybuf = sdsMakeRoomFor(c->querybuf, readlen);
-    nread = connRead(c->conn, c->querybuf+qblen, readlen);
+    c->querybuf = sdsMakeRoomFor(c->querybuf, readlen); //给缓冲区分配空间
+    nread = connRead(c->conn, c->querybuf+qblen, readlen); //调用read从描述符为fd的客户端socket中读取数据
     if (nread == -1) {
         if (connGetState(conn) == CONN_STATE_CONNECTED) {
             return;
@@ -2183,6 +2186,8 @@ void readQueryFromClient(connection *conn) {
         freeClientAsync(c);
         return;
     } else if (c->flags & CLIENT_MASTER) {
+        // 如果当前客户端是主从复制中的主节点，readQueryFromClient 函数还会把读取的数据，
+        // 追加到用于主从节点命令同步的缓冲区中。
         /* Append the query buffer to the pending (not applied) buffer
          * of the master. We'll use this buffer later in order to have a
          * copy of the string applied by the last command executed. */

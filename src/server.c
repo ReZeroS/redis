@@ -3974,7 +3974,7 @@ int processCommand(client *c) {
         serverAssert(!server.in_exec);
         serverAssert(!server.in_eval);
     }
-
+    //将 Redis 命令替换成 module 中想要替换的命令
     moduleCallCommandFilters(c);
 
     /* The QUIT command is handled separately. Normal command procs will
@@ -4096,6 +4096,7 @@ int processCommand(client *c) {
      * condition, to avoid mixing the propagation of scripts with the
      * propagation of DELs due to eviction. */
     if (server.maxmemory && !server.lua_timedout) {
+        // 内存相关检查 以及 lru 算法触发位置
         int out_of_memory = (performEvictions() == EVICT_FAIL);
         /* performEvictions may flush slave output buffers. This may result
          * in a slave, that may be the active client, to be freed. */
@@ -4249,15 +4250,16 @@ int processCommand(client *c) {
     }
 
     /* Exec the command */
+    ////如果客户端有CLIENT_MULTI标记，并且当前不是exec、discard、multi和watch命令
     if (c->flags & CLIENT_MULTI &&
         c->cmd->proc != execCommand && c->cmd->proc != discardCommand &&
         c->cmd->proc != multiCommand && c->cmd->proc != watchCommand &&
         c->cmd->proc != resetCommand)
     {
-        // 执行命令 返回结果
-        queueMultiCommand(c);
+        queueMultiCommand(c); ////将命令入队保存，等待后续一起处理
         addReply(c,shared.queued);
     } else {
+        //// call 执行命令 返回结果
         call(c,CMD_CALL_FULL);
         c->woff = server.master_repl_offset;
         if (listLength(server.ready_keys))

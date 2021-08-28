@@ -146,6 +146,7 @@ void evictionPoolPopulate(int dbid, dict *sampledict, dict *keydict, struct evic
     int j, k, count;
     dictEntry *samples[server.maxmemory_samples];
 
+    // 采样
     count = dictGetSomeKeys(sampledict,samples,server.maxmemory_samples);
     for (j = 0; j < count; j++) {
         unsigned long long idle;
@@ -168,6 +169,7 @@ void evictionPoolPopulate(int dbid, dict *sampledict, dict *keydict, struct evic
          * idle just because the code initially handled LRU, but is in fact
          * just a score where an higher score means better candidate. */
         if (server.maxmemory_policy & MAXMEMORY_FLAG_LRU) {
+            //计算在采样集合中的每一个键值对的空闲时间
             idle = estimateObjectIdleTime(o);
         } else if (server.maxmemory_policy & MAXMEMORY_FLAG_LFU) {
             /* When we use an LRU policy, we sort the keys by idle time
@@ -186,12 +188,13 @@ void evictionPoolPopulate(int dbid, dict *sampledict, dict *keydict, struct evic
         }
 
         /* Insert the element inside the pool.
-         * First, find the first empty bucket or the first populated
-         * bucket that has an idle time smaller than our idle time. */
+         *   【1】 find the first empty bucket
+         * or【2】 the first populated bucket that has an idle time smaller than our idle time. */
         k = 0;
         while (k < EVPOOL_SIZE &&
                pool[k].key &&
                pool[k].idle < idle) k++;
+
         if (k == 0 && pool[EVPOOL_SIZE-1].key != NULL) {
             /* Can't insert if the element is < the worst element we have
              * and there are no empty buckets. */
@@ -557,6 +560,7 @@ int performEvictions(void) {
                  * every DB. */
                 for (i = 0; i < server.dbnum; i++) {
                     db = server.db+i;
+                    // 根据淘汰策略看全表查还是查设置过期时间的
                     dict = (server.maxmemory_policy & MAXMEMORY_FLAG_ALLKEYS) ?
                             db->dict : db->expires;
                     if ((keys = dictSize(dict)) != 0) {
@@ -567,6 +571,7 @@ int performEvictions(void) {
                 if (!total_keys) break; /* No keys to evict. */
 
                 /* Go backward from best to worst element to evict. */
+                //按照空闲时间从小到大排好序了，所以从后往前找
                 for (k = EVPOOL_SIZE-1; k >= 0; k--) {
                     if (pool[k].key == NULL) continue;
                     bestdbid = pool[k].dbid;
@@ -588,6 +593,7 @@ int performEvictions(void) {
                     /* If the key exists, is our pick. Otherwise it is
                      * a ghost and we need to try the next element. */
                     if (de) {
+                        // 淘汰
                         bestkey = dictGetKey(de);
                         break;
                     } else {
@@ -636,6 +642,7 @@ int performEvictions(void) {
             delta = (long long) zmalloc_used_memory();
             latencyStartMonitor(eviction_latency);
             if (server.lazyfree_lazy_eviction)
+                // 惰性删除
                 dbAsyncDelete(db,keyobj);
             else
                 dbSyncDelete(db,keyobj);
