@@ -2225,6 +2225,7 @@ int slaveTryPartialResynchronization(connection *conn, int read_reply) {
 
 /* This handler fires when the non blocking connect was able to
  * establish a connection with the master. */
+//一旦主库和从库的连接建立后，从库实例的 syncWithMaster 函数就会被回调
 void syncWithMaster(connection *conn) {
     char tmpfile[256], *err = NULL;
     int dfd = -1, maxtries = 5;
@@ -2252,6 +2253,7 @@ void syncWithMaster(connection *conn) {
          * registered and we can wait for the PONG reply. */
         connSetReadHandler(conn, syncWithMaster);
         connSetWriteHandler(conn, NULL);
+        // 先设置成wait ping reply
         server.repl_state = REPL_STATE_RECEIVE_PING_REPLY;
         /* Send the PING, don't check for errors at all, we have the timeout
          * that will take care about this. */
@@ -2283,6 +2285,7 @@ void syncWithMaster(connection *conn) {
         }
         sdsfree(err);
         err = NULL;
+        // ping回应后设置握手
         server.repl_state = REPL_STATE_SEND_HANDSHAKE;
     }
 
@@ -2378,6 +2381,7 @@ void syncWithMaster(connection *conn) {
     if (server.repl_state == REPL_STATE_RECEIVE_IP_REPLY && !server.slave_announce_ip)
         server.repl_state = REPL_STATE_RECEIVE_CAPA_REPLY;
 
+    // 完成握手
     /* Receive REPLCONF ip-address reply. */
     if (server.repl_state == REPL_STATE_RECEIVE_IP_REPLY) {
         err = receiveSynchronousResponse(conn);
@@ -2412,6 +2416,7 @@ void syncWithMaster(connection *conn) {
      * and the global offset, to try a partial resync at the next
      * reconnection attempt. */
     if (server.repl_state == REPL_STATE_SEND_PSYNC) {
+        // 向主库发送 PSYNC
         if (slaveTryPartialResynchronization(conn,0) == PSYNC_WRITE_ERROR) {
             err = sdsnew("Write error sending the PSYNC command.");
             abortFailover("Write error to failover target");
@@ -2498,6 +2503,7 @@ void syncWithMaster(connection *conn) {
     }
 
     /* Setup the non blocking download of the bulk file. */
+    // 注册函数readSyncBulkPayload 开始进行实际的数据同步，比如主库把 RDB 文件传输给从库。、
     if (connSetReadHandler(conn, readSyncBulkPayload)
             == C_ERR)
     {

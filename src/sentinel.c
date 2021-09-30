@@ -464,6 +464,7 @@ void sentinelRoleCommand(client *c);
 void sentinelConfigGetCommand(client *c);
 void sentinelConfigSetCommand(client *c);
 
+/* 哨兵命令表 */
 struct redisCommand sentinelcmds[] = {
     {"ping",pingCommand,1,"fast @connection",0,NULL,0,0,0,0,0},
     {"sentinel",sentinelCommand,-2,"admin",0,NULL,0,0,0,0,0},

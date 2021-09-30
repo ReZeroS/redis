@@ -310,9 +310,12 @@ extern int configOOMScoreAdjValuesDefaults[CONFIG_OOM_COUNT];
 /* Slave replication state. Used in server.repl_state for slaves to remember
  * what to do next. */
 typedef enum {
-    REPL_STATE_NONE = 0,            /* No active replication */
-    REPL_STATE_CONNECT,             /* Must connect to master */
-    REPL_STATE_CONNECTING,          /* Connecting to master */
+    // initialize stage
+    REPL_STATE_NONE = 0,            /* No active replication */ // server.init
+    REPL_STATE_CONNECT,             /* Must connect to master */ // replicaofCommand  src/replication.c:2654
+
+    // try to connect stage
+    REPL_STATE_CONNECTING,          /* Connecting to master */  // replicationCron connectWithMaster
     /* --- Handshake states, must be ordered --- */
     REPL_STATE_RECEIVE_PING_REPLY,  /* Wait for PING reply */
     REPL_STATE_SEND_HANDSHAKE,      /* Send handshake sequance to master */
